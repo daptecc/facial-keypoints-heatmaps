@@ -1,5 +1,6 @@
 *.tar
 #*.ipynb
+scratch.ipynb
 submissions/
 checkpoints/
 *.zip
