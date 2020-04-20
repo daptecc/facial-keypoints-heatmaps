@@ -1,3 +1,10 @@
+import os, glob, math
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+
 class FacialKeyPointsDataset(Dataset):
     
     def __init__(self, csv_file, n_keypoints, size, transform):
@@ -6,6 +13,7 @@ class FacialKeyPointsDataset(Dataset):
             csv_file (string): csv file with facial keypoints and pixel values for all images
             n_keypoints (int): number of facial keypoints (w, h)
             size (int,int): shape of image
+            transform: torchvision transforms
         """
         
         self.df = self.filter_by_n_kpts(csv_file, n_keypoints)
@@ -42,46 +50,48 @@ class FacialKeyPointsDataset(Dataset):
         if self.n_keypoints == 4:
             keypts = keypts[~np.isnan(keypts)]
         
-        heatmaps = []        
+        heatmaps = np.zeros((h, w, len(keypts)//2 + 1), dtype=np.float32)
         for i in range(0, len(keypts)//2):
             x = int(keypts[i * 2])
             y = int(keypts[i * 2 + 1])
             heatmap = self.gaussian(x, y, w, h)
-            heatmaps.append(heatmap)
-            
-        heatmaps = np.array(heatmaps)
+            heatmaps[:,:, i + 1] = heatmap
+                    
+        heatmaps[:,:, 0] = 1.0 - np.max(heatmaps, axis=2)
         
         if self.transform:
             img = self.transform(img)
             heatmaps = self.transform(heatmaps)
-    
-        heatmaps = heatmaps.transpose(0,1)
-        heatmaps = heatmaps.transpose(1,2)
         
         return img, heatmaps
     
     
-    def gaussian(self, xL, yL, H, W, sigma=5):
-        channel = [math.exp(-((c - xL) ** 2 + (r - yL) ** 2) / (2 * sigma ** 2)) for r in range(H) for c in range(W)]
+    def gaussian(self, x, y, H, W, sigma=5):
+        """
+        Create heatmaps by convoluting a 2D gaussian kernel over a (x,y) keypoint
+        """
+        channel = [math.exp(-((c - x) ** 2 + (r - y) ** 2) / (2 * sigma ** 2)) for r in range(H) for c in range(W)]
         channel = np.array(channel, dtype=np.float32)
         channel = np.reshape(channel, newshape=(H, W))
 
         return channel
     
     
-    def show_sample(self, img, heatmaps):
+    def show_sample(self, img, heatmap):
         plt.imshow(img.reshape(self.size), cmap='gray', alpha=0.5)
-        plt.imshow(heatmaps.sum(axis=0), alpha=0.5)
+        plt.imshow(heatmap, alpha=0.5)
     
-    
-    def display_samples(self, n=3):
-        fig = plt.figure(figsize=(10, 5))
+    def display_sample(self):
+        fig = plt.figure(figsize=(20, 6))
         fig.tight_layout()
-        for i in range(n):
-            rand_i = np.random.randint(0, len(self.df))
-            img, heatmaps = self.__getitem__(rand_i)
+        rand_i = np.random.randint(0, len(self.df))
+        img, heatmaps = self.__getitem__(rand_i)
+        n = len(heatmaps)
+        #fig.add_subplot(2, (n + 1)//2, 1)
+        #plt.imshow(img.reshape(self.size), cmap='gray')
 
-            print(i, img.shape, heatmaps.shape)
-            fig.add_subplot(1, n, i + 1)
-            self.show_sample(img, heatmaps)
+        for i in range(0, n):
+            heatmap = heatmaps[i]
+            fig.add_subplot(2, (n + 1)//2, i + 1)
+            self.show_sample(img, heatmap)
         fig.savefig('samples/heatmaps.png')
