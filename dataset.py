@@ -50,14 +50,14 @@ class FacialKeyPointsDataset(Dataset):
         if self.n_keypoints == 4:
             keypts = keypts[~np.isnan(keypts)]
         
-        heatmaps = np.zeros((h, w, len(keypts)//2 + 1), dtype=np.float32)
+        heatmaps = np.zeros((h, w, len(keypts)//2), dtype=np.float32)
         for i in range(0, len(keypts)//2):
             x = int(keypts[i * 2])
             y = int(keypts[i * 2 + 1])
             heatmap = self.gaussian(x, y, w, h)
-            heatmaps[:,:, i + 1] = heatmap
+            heatmaps[:,:, i] = heatmap
                     
-        heatmaps[:,:, 0] = 1.0 - np.max(heatmaps, axis=2)
+        #heatmaps[:,:, 0] = 1.0 - np.max(heatmaps, axis=2)
         
         if self.transform:
             img = self.transform(img)
