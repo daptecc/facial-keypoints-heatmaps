@@ -15,31 +15,37 @@ import torchvision
 from tensorboardX import SummaryWriter
 
 from data_load import *
-
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
+from model import CPM2
 
 def train(args, epoch, model, criterion, optimizer, train_loader, writer, iters):
+    
     model.train()
-    for batch_idx, sample in enumerate(train_loader):
-        data = sample['image']
-        target = sample['keypoints']
-        data, target = Variable(data.cuda()), Variable(target.cuda())
-        data, target = data.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
-        target = target.reshape(target.shape[0], -1,)
-        output = model(data)
+    
+    for batch_idx, (img, target) in enumerate(train_loader):
+        
+        img, target = Variable(img.cuda()), Variable(target.cuda())
+        img, target = img.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
+        
+        #print('target', target.shape)
+        #target = target.reshape(target.shape[0], -1,)
+        outputs_stage1 = model(img, stage=1)
+        #print('outputs_stage1', outputs_stage1.shape)
         optimizer.zero_grad()
-        loss = criterion(output, target)
+        
+        loss1 = criterion(outputs_stage1, target)
+        input_stage2 = torch.cat([img, outputs_stage1], axis=1)
+        #print('input_stage2', input_stage2.shape)
+        outputs_stage2 = model(input_stage2, stage=2)
+        #print('outputs_stage2', outputs_stage2.shape)
+        loss2 = criterion(outputs_stage2, target)
+        loss = loss1 + loss2
         loss.backward()
         optimizer.step()
         
         if batch_idx % args.log_interval == 0 and not batch_idx==0 :
             print('Train Epoch:{}/{} [{}/{} ({:.0f}%)]  Loss:{:.4f}'.format(
-                epoch, args.epochs,
-                batch_idx * len(data), len(train_loader) * len(data),
+                epoch + 1, args.epochs,
+                batch_idx * len(img), len(train_loader) * len(img),
                 100.0 * batch_idx / len(train_loader), loss.item()
             ), end='\r')
             writer.add_scalar('loss', loss.item(), iters) # add to tensorboard
@@ -47,31 +53,40 @@ def train(args, epoch, model, criterion, optimizer, train_loader, writer, iters)
             count=0
     return loss.item(), iters
 
+
 def test(args, epoch, model, criterion, test_loader, writer, iters):
     model.eval()
-    for batch_idx, sample in enumerate(test_loader):
-        data = sample['image']
-        target = sample['keypoints']
-        data, target = Variable(data.cuda()), Variable(target.cuda())
-        data, target = data.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
-        target = target.reshape(target.shape[0], -1,)
-        output = model(data)
-        loss = criterion(output, target)
+    
+    for batch_idx, (img, target) in enumerate(test_loader):
+        
+        img, target = Variable(img.cuda()), Variable(target.cuda())
+        img, target = img.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
+        
+        #target = target.reshape(target.shape[0], -1, )
+        outputs_stage1 = model(img, stage=1)
+        loss1 = criterion(outputs_stage1, target)
+        input_stage2 = torch.cat([img, outputs_stage1], axis=1)
+        outputs_stage2 = model(input_stage2, stage=2)
+        loss2 = criterion(outputs_stage2, target)
+        
+        loss = loss1 + loss2
         
         if batch_idx % args.log_interval == 0 and not batch_idx==0 :
             print('Val Epoch:{}/{} [{}/{} ({:.0f}%)]  Val loss:{:.4f}'.format(
-                epoch, args.epochs,
-                batch_idx * len(data), len(test_loader) * len(data),
+                epoch + 1, args.epochs,
+                batch_idx * len(img), len(test_loader) * len(img),
                 100.0 * batch_idx / len(test_loader), loss.item()
-            ))
+            ), end='\r')
             writer.add_scalar('valloss', loss.item(), iters) # add to tensorboard
     return loss.item()
 
-def save_checkpoint(state, is_best, keypoints_count, filename='checkpoint.pth.tar'):
+
+def save_checkpoint(state, is_best, n_keypoints, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.kp%i.pth.tar' % keypoints_count)
+        shutil.copyfile(filename, 'checkpoints/model_best.kp%i.pth.tar' % n_keypoints)
 
+        
 def resume(args, ckpt,model):
     if os.path.isfile(ckpt):
         print('==> loading checkpoint {}'.format(ckpt))
@@ -86,40 +101,28 @@ def resume(args, ckpt,model):
     else:
         print("==> no checkpoint found at '{}'".format(args.resume))
     
+    
 def adjust_lr(args, optimizer, epoch, decay=20):
     """
         adjust the learning rate initial lr decayed 10 every 20 epoch
     """
-    lr = args.lr * (0.1**(epoch//decay))
+    lr=args.lr*(0.1**(epoch//decay))
     for param in optimizer.param_groups:
         param['lr'] = lr
-
-def get_model(modelname, n_keypoints, channels=1):
-    model = None
-    # optionally add more models for testing
-    if modelname == 'mobilenetv2':
-        model = torchvision.models.mobilenet_v2(pretrained=True)
-        model.features._modules['0'][0] = nn.Conv2d(channels, 32,
-                                                    kernel_size=(3,3),
-                                                    stride=(2,2),
-                                                    padding=(1,1),
-                                                    bias=False)
-        layers = [
-            nn.Dropout(p=0.2),
-            nn.Linear(in_features=1280, out_features=n_keypoints*2, bias=True)
-        ]
-        model.classifier = nn.Sequential(*layers)
-    return model
+        
 
 def get_dataset_indices(file, n_keypoints):
     df = pd.read_csv(file)
     notnan = df.apply(lambda x: np.sum(~x[:30].isnull()), axis=1)
-    return notnan[notnan == n_keypoints*2].index
+    return notnan[notnan == n_keypoints*2].reset_index(drop=True).index
+
 
 def get_dataloaders(n_keypoints, use_val=True):
-    dataset = FacialKeyPoints(csv_file=args.train_csv,
-                              n_keypoints=n_keypoints,
-                              size=(96,96))
+    tsfm = transforms.Compose([transforms.ToTensor()])
+    dataset = FacialKeyPointsDataset(csv_file=args.train_csv,
+                                     n_keypoints=n_keypoints,
+                                     size=(96,96),
+                                     transform=tsfm)
     indices = get_dataset_indices(file=args.train_csv, n_keypoints=n_keypoints)
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     
@@ -148,15 +151,16 @@ def get_dataloaders(n_keypoints, use_val=True):
         val_loader = None
     
     return train_loader, val_loader
-
-def main(modelname, n_keypoints, use_val=True):
+      
+    
+def main(n_keypoints, use_val=True):
     """
     Args:
         n_keypoints(int): number of keypoints (x,y) in dataset
         use_val(bool): False when using all train data for predictions,
                        otherwise, split train for testing
     """
-    args = dotdict(get_clargs())
+    
     args.cuda = torch.cuda.is_available()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
@@ -164,16 +168,19 @@ def main(modelname, n_keypoints, use_val=True):
     # SmoothL1Loss/Huber loss is less sensitive to outliers than MSELoss
     # absolute squared term < 1, use L1, else use L2
     criterion = nn.SmoothL1Loss()
+    model = CPM2(k=n_keypoints)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
     writer = SummaryWriter('logs/'+datetime.now().strftime('%B-%d'))
     best_loss = 1e+5
     best_loss_val = 1e+5
     iters = 0
     
-    train_loader, val_loader = get_dataloaders()
-    model = get_model(modelname=modelname, n_keypoints=n_keypoints)
+    train_loader, val_loader = get_dataloaders(n_keypoints)
+    
     assert model is not None
-    if args.cuda: model.cuda()
+    if args.cuda: 
+        model.cuda()
+        #print(model)
     
     # resume training 
     if args.resume:
@@ -203,51 +210,52 @@ def main(modelname, n_keypoints, use_val=True):
             best_loss_val = min(best_loss_val, loss_val)
             state['loss_val'] = best_loss_val
             
-        save_checkpoint(state, is_best, keypoints)
-    writer.close()   
-
-def unnormalize_kp(df_train, output):
-    kp_mean = df_train.iloc[:,:30].stack().mean()
-    kp_std = df_train.iloc[:,:30].stack().std()
-    return (output * kp_std) + kp_mean
+        save_checkpoint(state, is_best, n_keypoints)
+    writer.close()
     
+    
+def show_heatmap(img, heatmap):
+    plt.imshow(img, cmap='gray', alpha=0.5)
+    plt.imshow(heatmap, alpha=0.5)
+
 def get_img_and_output(model, df, idx):
     img = np.array(df.iloc[idx,1].split())
     img = img.astype(np.float32).reshape(96,96)
-    img /= 255.0
+    #img /= 255.0
     img_input = np.expand_dims(img, axis=0)
     img_input = np.expand_dims(img_input, axis=0)
-    output = model(torch.from_numpy(img_input))
-    output = unnormalize_kp(output)
-        
-    return img, output.reshape(-1, 2).detach().numpy()
-
-def show_keypoints(img, keypts, outfile=None):
-        plt.scatter(keypts[:,0], keypts[:,1], s=32, c='w', marker='h')
-        plt.imshow(img)
-        if outfile:
-            plt.savefig(outfile)
-            print('Saved to', outfile)
+    img_input = torch.from_numpy(img_input)
+    outputs_stage1 = model(img_input, stage=1)
+    input_stage2 = torch.cat([img_input, outputs_stage1], axis=1)
+    outputs_stage2 = model(input_stage2, stage=2)
+    outputs_stage2 = outputs_stage2
+    
+    heatmapsum = outputs_stage2.sum(axis=1)
+    heatmapsum = torch.squeeze(heatmapsum, axis=0)
+    return img, heatmapsum.detach().numpy()
 
 def display_samples(model, df, outfile):
-    fig = plt.figure(figsize=(15, 15))
+    fig = plt.figure(figsize=(10, 10))
     fig.tight_layout()
     rows, columns = 3, 3
-    ax = []
     for i in range(columns*rows):
         idx = random.randint(0, df.shape[0])
         img, output = get_img_and_output(model, df, idx)
-        ax.append(fig.add_subplot(rows, columns, i + 1))
-        show_keypoints(img, output)
+        fig.add_subplot(rows, columns, i + 1)
+        show_heatmap(img, output)
     plt.show()
     if outfile:
-        plt.savefig(outfile)
-        print('Saved to', outfile)
-            
+        fig.savefig(outfile)
+        print(f'Saved to {outfile}')
+        
 def show_example(model, df, idx, outfile):
     img, output = get_img_and_output(model, df, idx)
-    show_keypoints(img, output, outfile)
+    show_heatmap(img, output)
+    if outfile:
+        plt.savefig(outfile)
+        print(f'Saved to {outfile}')
 
+    
 def create_submission(test_file, lookup_file):
     submission = []
     df_test = pd.read_csv(args.test_csv)
@@ -325,16 +333,15 @@ if __name__ == '__main__':
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
     
-    modelname = 'mobilenetv2'
-    main(modelname, keypoints=15, use_val=False)
-    main(modelname, keypoints=4, use_val=False)
+    main(n_keypoints=15, use_val=False)
+    main(n_keypoints=4, use_val=False)
 
-    model15 = get_model(modelname, keypoints=15)
-    model15.load_state_dict(torch.load('model_best.kp15.pth.tar')['state_dict'])
+    model15 = CPM2(n_keypoints=15)
+    model15.load_state_dict(torch.load('checkpoints/model_best.kp15.pth.tar')['state_dict'])
     model15.eval()
 
-    model4 = get_model(modelname, keypoints=4)
-    model4.load_state_dict(torch.load('model_best.kp4.pth.tar')['state_dict'])
+    model4 = CPM2(n_keypoints=4)
+    model4.load_state_dict(torch.load('checkpoints/model_best.kp4.pth.tar')['state_dict'])
     model4.eval()
     
     df_test = pd.read_csv(args.test_csv)

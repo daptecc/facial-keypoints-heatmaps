@@ -19,12 +19,12 @@ class ConvBlock(nn.Module):
         return out
         
 class CPM2(nn.Module):
-    def __init__(self, k, channels=1):
+    def __init__(self, n_keypoints, channels=1):
         super().__init__()
-        self.k = k
+        self.k = n_keypoints
         self.channels = channels
         self.block1a = ConvBlock(nconvs=2, in_channel=channels, out_channel=64)
-        self.block1b = ConvBlock(nconvs=2, in_channel=channels + k, out_channel=64)
+        self.block1b = ConvBlock(nconvs=2, in_channel=channels + self.k, out_channel=64)
         self.block2 = ConvBlock(nconvs=2, in_channel=64, out_channel=128)
         self.block3 = ConvBlock(nconvs=3, in_channel=128, out_channel=256)
         self.block4 = ConvBlock(nconvs=3, in_channel=256, out_channel=512)
@@ -97,9 +97,9 @@ class CPM2(nn.Module):
         return heatmaps
 
 class CPM(nn.Module):
-    def __init__(self, k, channels=1):
+    def __init__(self, n_keypoints, channels=1):
         super(CPM, self).__init__()
-        self.k = k
+        self.k = n_keypoints
         self.pool_center = nn.AvgPool2d(kernel_size=9, stride=8, padding=1)
         self.conv1_stage1 = nn.Conv2d(channels, 128, kernel_size=9, padding=4)
         self.pool1_stage1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
