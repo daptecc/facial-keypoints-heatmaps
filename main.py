@@ -215,6 +215,7 @@ def main(n_keypoints, use_val=True):
     
     
 def show_heatmap(img, heatmap):
+    plt.axis('off')
     plt.imshow(img, cmap='gray', alpha=0.5)
     plt.imshow(heatmap, alpha=0.5)
 
@@ -230,25 +231,42 @@ def get_img_and_output(model, df, idx):
     outputs_stage2 = model(input_stage2, stage=2)
     outputs_stage2 = outputs_stage2
     
-    heatmapsum = outputs_stage2.sum(axis=1)
-    heatmapsum = torch.squeeze(heatmapsum, axis=0)
-    return img, heatmapsum.detach().numpy()
-
-def display_samples(model, df, outfile):
+    return img, outputs_stage2
+    
+def display_heatmap_eachkp(model, df, outfile):
+    fig = plt.figure(figsize=(20, 6))
+    fig.tight_layout()
+    
+    idx = random.randint(0, df.shape[0])
+    img, heatmaps = get_img_and_output(model, df, idx)
+    heatmaps = torch.squeeze(heatmaps, axis=0)
+    n = len(heatmaps)
+    for i in range(0, n):
+        heatmap = heatmaps[i].detach().numpy()
+        fig.add_subplot(2, (n + 1)//2, i + 1)
+        show_heatmap(img, heatmap)
+    fig.savefig(outfile)
+    print(f'Saved to {outfile}')
+        
+def display_heatmap_combined(model, df, outfile):
     fig = plt.figure(figsize=(10, 10))
     fig.tight_layout()
     rows, columns = 3, 3
     for i in range(columns*rows):
         idx = random.randint(0, df.shape[0])
-        img, output = get_img_and_output(model, df, idx)
+        img, heatmaps = get_img_and_output(model, df, idx)
+        heatmaps = heatmaps.sum(axis=1)
+        heatmaps = torch.squeeze(heatmaps, axis=0)
+        heatmaps = heatmaps.detach().numpy()
+        
         fig.add_subplot(rows, columns, i + 1)
-        show_heatmap(img, output)
-    plt.show()
+        show_heatmap(img, heatmaps)
+
     if outfile:
         fig.savefig(outfile)
         print(f'Saved to {outfile}')
-        
-def show_example(model, df, idx, outfile):
+
+def display_heatmap_combined_one(model, df, idx, outfile):
     img, output = get_img_and_output(model, df, idx)
     show_heatmap(img, output)
     if outfile:

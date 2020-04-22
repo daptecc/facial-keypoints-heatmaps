@@ -2,10 +2,14 @@
 
 Testing heatmap representation of keypoints
 
-Ground truths
+Ground truth sample
 
 ![Heatmaps](samples/heatmaps.png)
 
-Predictions
+Prediction sample
 
-![Predictions](samples/sample.15kp.png)
+![Prediction](samples/sample.15kp.eachheatmap.png)
+
+Prediction samples with keypoint heatmaps combined
+
+![Predictions](samples/sample.15kp.combinedheatmap.png)
