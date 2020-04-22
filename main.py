@@ -15,9 +15,9 @@ import torchvision
 from tensorboardX import SummaryWriter
 
 from data_load import *
-from model import CPM2
+from model import CPM
 
-def train(args, epoch, model, criterion, optimizer, train_loader, writer, iters):
+def train(epoch, model, criterion, optimizer, train_loader, writer, iters):
     
     model.train()
     
@@ -25,20 +25,20 @@ def train(args, epoch, model, criterion, optimizer, train_loader, writer, iters)
         
         img, target = Variable(img.cuda()), Variable(target.cuda())
         img, target = img.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
+
+        losses = []
+        for stage in range(1, args.stages + 1):
+            if stage == 1:
+                inputs = img
+            else:
+                inputs = torch.cat([img, outputs], axis=1)
+            outputs = model(inputs, stage=stage)
+            loss = criterion(outputs, target)
+            losses.append(loss)
         
-        #print('target', target.shape)
-        #target = target.reshape(target.shape[0], -1,)
-        outputs_stage1 = model(img, stage=1)
-        #print('outputs_stage1', outputs_stage1.shape)
+        loss = sum(losses)
+        
         optimizer.zero_grad()
-        
-        loss1 = criterion(outputs_stage1, target)
-        input_stage2 = torch.cat([img, outputs_stage1], axis=1)
-        #print('input_stage2', input_stage2.shape)
-        outputs_stage2 = model(input_stage2, stage=2)
-        #print('outputs_stage2', outputs_stage2.shape)
-        loss2 = criterion(outputs_stage2, target)
-        loss = loss1 + loss2
         loss.backward()
         optimizer.step()
         
@@ -53,8 +53,7 @@ def train(args, epoch, model, criterion, optimizer, train_loader, writer, iters)
             count=0
     return loss.item(), iters
 
-
-def test(args, epoch, model, criterion, test_loader, writer, iters):
+def test(epoch, model, criterion, test_loader, writer, iters):
     model.eval()
     
     for batch_idx, (img, target) in enumerate(test_loader):
@@ -62,14 +61,17 @@ def test(args, epoch, model, criterion, test_loader, writer, iters):
         img, target = Variable(img.cuda()), Variable(target.cuda())
         img, target = img.type(torch.cuda.FloatTensor), target.type(torch.cuda.FloatTensor)
         
-        #target = target.reshape(target.shape[0], -1, )
-        outputs_stage1 = model(img, stage=1)
-        loss1 = criterion(outputs_stage1, target)
-        input_stage2 = torch.cat([img, outputs_stage1], axis=1)
-        outputs_stage2 = model(input_stage2, stage=2)
-        loss2 = criterion(outputs_stage2, target)
+        losses = []
+        for stage in range(1, args.stages + 1):
+            if stage == 1:
+                inputs = img
+            else:
+                inputs = torch.cat([img, outputs], axis=1)
+            outputs = model(inputs, stage=stage)
+            loss = criterion(outputs, target)
+            losses.append(loss)
         
-        loss = loss1 + loss2
+        loss = sum(losses)
         
         if batch_idx % args.log_interval == 0 and not batch_idx==0 :
             print('Val Epoch:{}/{} [{}/{} ({:.0f}%)]  Val loss:{:.4f}'.format(
@@ -168,7 +170,7 @@ def main(n_keypoints, use_val=True):
     # SmoothL1Loss/Huber loss is less sensitive to outliers than MSELoss
     # absolute squared term < 1, use L1, else use L2
     criterion = nn.SmoothL1Loss()
-    model = CPM2(k=n_keypoints)
+    model = CPM(k=n_keypoints)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
     writer = SummaryWriter('logs/'+datetime.now().strftime('%B-%d'))
     best_loss = 1e+5
@@ -354,11 +356,11 @@ if __name__ == '__main__':
     main(n_keypoints=15, use_val=False)
     main(n_keypoints=4, use_val=False)
 
-    model15 = CPM2(n_keypoints=15)
+    model15 = CPM(n_keypoints=15)
     model15.load_state_dict(torch.load('checkpoints/model_best.kp15.pth.tar')['state_dict'])
     model15.eval()
 
-    model4 = CPM2(n_keypoints=4)
+    model4 = CPM(n_keypoints=4)
     model4.load_state_dict(torch.load('checkpoints/model_best.kp4.pth.tar')['state_dict'])
     model4.eval()
     
