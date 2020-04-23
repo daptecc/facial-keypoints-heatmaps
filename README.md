@@ -18,4 +18,4 @@ Predicted heatmaps combined
 ![Predictions](samples/sample.15kp.combinedheatmap.png)
 
 Predicted heatmaps converted to keypoints
-![Predictions](samples/samples.15kp.predicted.png)
+![Predictions](samples/sample.15kp.predicted.png)
