@@ -275,33 +275,52 @@ def display_heatmap_combined_one(model, df, idx, outfile):
         plt.savefig(outfile)
         print(f'Saved to {outfile}')
 
+
+def heatmaps_to_keypoints(heatmaps):
+    keypoints = []
+    for i in range(len(heatmaps)):
+        heatmap = heatmaps[i]
+        vals_x, indices_x = torch.max(heatmap, 0)
+        vals_y, indices_y = torch.max(heatmap, 1)
+        vals_x = vals_x.detach().numpy()
+        vals_y = vals_y.detach().numpy()
+        x = np.argmax(vals_x)
+        y = np.argmax(vals_y)
+        keypoints.append(x)
+        keypoints.append(y)
     
-def create_submission(test_file, lookup_file):
+    return np.array(keypoints)
+
+
+def create_submission():
     submission = []
-    df_test = pd.read_csv(args.test_csv)
+    df = pd.read_csv(args.test_csv)
     df_train = pd.read_csv(args.train_csv)
     df_idlookup = pd.read_csv(args.idlookup_table)
     kp_cols15 = df_idlookup[df_idlookup['ImageId'] == 1]['FeatureName'] # sample with 15 keypoints
     kp_cols4 = df_idlookup[df_idlookup['ImageId'] == 1481]['FeatureName'] # sample with 4 keypoints
     total = df.shape[0]
     
+    results = []
     for id in df['ImageId']:
         print(id, total, end='\r')
         img = np.array(df[df['ImageId'] == id]['Image'].values[0].split())
         img = img.astype(np.float32).reshape(96,96)
-        img /= 255.0
+        #img /= 255.0
         img_input = np.expand_dims(img, axis=0)
         img_input = np.expand_dims(img_input, axis=0)
-
+        
         keypoints_include = df_idlookup[df_idlookup['ImageId'] == id]['FeatureName']
         if len(keypoints_include) > 8:
-            output = model15(torch.from_numpy(img_input))
+            output = model15(torch.from_numpy(img_input), stage=1)
         else:
-            output = model4(torch.from_numpy(img_input))
+            output = model4(torch.from_numpy(img_input), stage=1)
 
-        keypoints = output.detach().numpy()[0]
-        keypoints = unnormalize_kp(df_train, keypoints)
-        keypoints = keypoints.astype(np.int16)
+        output = torch.squeeze(output, 0)
+        keypoints = heatmaps_to_keypoints(output)
+        
+        if len(keypoints_include) > 8:
+            results.append([img, keypoints])
         
         if len(keypoints_include) > 8:
             keypoints = keypoints[kp_cols15.isin(keypoints_include)]
@@ -310,8 +329,10 @@ def create_submission(test_file, lookup_file):
 
         for i in range(len(keypoints)):
             submission.append(keypoints[i])
-
+    
     write_submission(submission)
+    return results
+
 
 def write_submission(submission):
     df_submit = pd.DataFrame(submission)
@@ -321,6 +342,27 @@ def write_submission(submission):
     df_submit['Location'] = df_submit['Location'].apply(lambda x: x if x > 0 else 0)
     df_submit.to_csv('submission.csv', index=False)
     print('wrote to submission.csv', df_submit.shape)
+
+    
+def display_sample_keypoints(results, outfile):
+    fig = plt.figure(figsize=(10, 10))
+    fig.tight_layout()
+    rows, columns = 3, 3
+    for i in range(columns*rows):
+        idx = random.randint(0, len(results))
+        img, keypoints = results[idx]
+        
+        fig.add_subplot(rows, columns, i + 1)
+        plt.axis('off')
+        plt.imshow(img)
+        for j in range(0, len(keypoints), 2):
+            x, y = keypoints[j], keypoints[j + 1]
+            plt.scatter(x, y, c='white', s=20)
+    
+    if outfile:
+        fig.savefig(outfile)
+        print(f'Saved to {outfile}')
+        
 
 def get_args():
     parser = argparse.ArgumentParser(description='Kaggle facial keypoints adapted from Udacity facial keypoints project')
@@ -352,7 +394,10 @@ if __name__ == '__main__':
     args.cuda = torch.cuda.is_available()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-    
+
+    if not os.path.exists('checkpoints'):
+        os.makedir(checkpoints)
+        
     main(n_keypoints=15, use_val=False)
     main(n_keypoints=4, use_val=False)
 
@@ -364,9 +409,15 @@ if __name__ == '__main__':
     model4.load_state_dict(torch.load('checkpoints/model_best.kp4.pth.tar')['state_dict'])
     model4.eval()
     
-    df_test = pd.read_csv(args.test_csv)
-    show_example(model15, df_test, 'sample.15kp.png')
-    show_example(model4, df_test, 'sample.4kp.png')
-    
-    create_submission()
+    if not os.path.exists('samples'):
+        os.makedir(samples)
+        
+    df = pd.read_csv('data/test.csv')
+    display_heatmap_eachkp(model15, df, 'samples/sample.15kp.eachheatmap.png')
+    display_heatmap_eachkp(model4, df, 'samples/sample.4kp.eachheatmap.png')
+    display_heatmap_combined(model15, df, 'samples/sample.15kp.combinedheatmap.png')
+    display_heatmap_combined(model4, df, 'samples/sample.4kp.combinedheatmap.png')
+
+    results = create_submission()
+    display_sample_keypoints(results, 'samples/sample.15kp.prediction.png')
                  

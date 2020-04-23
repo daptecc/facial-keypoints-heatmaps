@@ -6,13 +6,16 @@ Ground truth sample
 
 ![Heatmaps](samples/heatmaps.png)
 
-Prediction sample for 15 keypoints
+Predicted heatmaps for 15 keypoints
 
 ![Prediction](samples/sample.15kp.eachheatmap.png)
 
-Prediction ssample for 4 keypoints
+Predicted heatmaps for 4 keypoints
 ![Prediction](samples/sample.4kp.eachheatmap.png)
 
-Prediction samples with keypoint heatmaps combined
+Predicted heatmaps combined
 
 ![Predictions](samples/sample.15kp.combinedheatmap.png)
+
+Predicted heatmaps converted to keypoints
+![Predictions](samples/samples.15kp.predicted.png)
