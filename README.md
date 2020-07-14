@@ -1,8 +1,8 @@
 ### Facial Keypoints Detection on Kaggle dataset
 
-Testing keypoint heatmaps using Convolutional Pose Machines ![arxiv.org/abs/1602.00134](https://arxiv.org/abs/1602.00134).
+Testing keypoint heatmaps using Convolutional Pose Machines [arxiv.org/abs/1602.00134](https://arxiv.org/abs/1602.00134).
 
-Data: ![facial keypoints dataset](https://www.kaggle.com/c/facial-keypoints-detection/data)
+Data: [facial keypoints dataset](https://www.kaggle.com/c/facial-keypoints-detection/data)
 
 Ground truth sample
 
