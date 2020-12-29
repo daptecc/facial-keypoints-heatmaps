@@ -19,6 +19,11 @@ class ConvBlock(nn.Module):
         return out
         
 class CPM(nn.Module):
+    '''
+    Convolutional Pose Machines
+    https://arxiv.org/abs/1602.00134
+    '''
+    
     def __init__(self, n_keypoints, channels=1):
         super().__init__()
         self.k = n_keypoints
@@ -48,47 +53,31 @@ class CPM(nn.Module):
         return heatmaps
         
     def stage(self, input, stage):
-        #print('input', input.shape)
         out = self.block1a(input) if stage == 1 else self.block1b(input)
-        #print('block 1', out.shape)
         out = self.block2(out)
-        #print('block 2', out.shape)
         pool3 = self.block3(out)
-        #print('pool3', pool3.shape)
         pool4 = self.block4(pool3)
-        #print('pool4', pool4.shape)
         out = self.block5(pool4)
-        #print('block 5', out.shape)
-        
         out = self.conv6(out)
-        #print('conv6', out.shape)
         out = self.relu(out)
         out = self.conv7(out)
-        #print('conv7', out.shape)
         out = self.relu(out)
         
         # upsampling
         preds_pool3 = self.pool3(pool3)
-        #print('preds_pool3', preds_pool3.shape)
         preds_pool3 = self.relu(preds_pool3)
         preds_pool4 = self.pool4(pool4)
-        #print('preds_pool4', preds_pool4.shape)
         preds_pool4 = self.relu(preds_pool4)
         up_pool4 = self.up_pool4(preds_pool4)
-        #print('up_pool4', preds_pool3.shape)
         up_pool4 = self.relu(up_pool4)
         up_conv7 = self.up_conv7(out)
-        #print('up_conv7', preds_pool3.shape)
         up_conv7 = self.relu(up_conv7)
         
         fused = torch.add(preds_pool3, up_pool4)
         fused = torch.add(fused, up_conv7)
-        #print('fused', fused.shape)
         
         heatmaps = self.up_fused(fused)
-        #print('heatmaps transpose', heatmaps.shape)
         heatmaps = self.relu(heatmaps)
         heatmaps = self.up_final(heatmaps)
-        #print('heatmaps conv2d', heatmaps.shape)
         
         return heatmaps

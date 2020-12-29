@@ -182,7 +182,6 @@ def main(n_keypoints, use_val=True):
     assert model is not None
     if args.cuda: 
         model.cuda()
-        #print(model)
     
     # resume training 
     if args.resume:

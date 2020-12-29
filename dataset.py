@@ -41,7 +41,6 @@ class FacialKeyPointsDataset(Dataset):
         img = np.array(self.df.iloc[idx, 30].split())
         w, h = self.size
         img = img.astype(np.float32).reshape(w, h)
-        #img = np.expand_dims(img, axis=0)
 
         keypts = self.df.iloc[idx,:30].values
         keypts = keypts.reshape(-1, 1)
@@ -56,8 +55,6 @@ class FacialKeyPointsDataset(Dataset):
             y = int(keypts[i * 2 + 1])
             heatmap = self.gaussian(x, y, w, h)
             heatmaps[:,:, i] = heatmap
-                    
-        #heatmaps[:,:, 0] = 1.0 - np.max(heatmaps, axis=2)
         
         if self.transform:
             img = self.transform(img)
@@ -87,8 +84,6 @@ class FacialKeyPointsDataset(Dataset):
         rand_i = np.random.randint(0, len(self.df))
         img, heatmaps = self.__getitem__(rand_i)
         n = len(heatmaps)
-        #fig.add_subplot(2, (n + 1)//2, 1)
-        #plt.imshow(img.reshape(self.size), cmap='gray')
 
         for i in range(0, n):
             heatmap = heatmaps[i]
